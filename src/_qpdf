@@ -1,0 +1,69 @@
+#compdef qpdf
+
+_qpdf() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    # Path to the mbsync configuration file.
+    local config_file="$HOME/.mbsyncrc"
+
+    # Options for mbsync command
+    local -a opts
+    opts=(
+        '-a[all]'
+        '--all[all]'
+        '-l[list]'
+        '--list[list]'
+        '-n[new]'
+        '--new[new]'
+        '-d[delete]'
+        '--delete[delete]'
+        '-f[flags]'
+        '--flags[flags]'
+        '-N[renew]'
+        '--renew[renew]'
+        '-L[pull]'
+        '--pull[pull]'
+        '-H[push]'
+        '--push[push]'
+        '-C[create]'
+        '--create[create]'
+        '-R[remove]'
+        '--remove[remove]'
+        '-X[expunge]'
+        '--expunge[expunge]'
+        '-c[config]'
+        '--config[config]'
+        '-D[debug]'
+        '--debug[debug]'
+        '-V[verbose]'
+        '--verbose[verbose]'
+        '-q[quiet]'
+        '--quiet[quiet]'
+        '-v[version]'
+        '--version[version]'
+        '-h[help]'
+        '--help[help]'
+    )
+
+    # Check if the configuration file exists and is readable
+    if [[ -r "$config_file" ]]; then
+        # Extract channel and group names from the configuration file
+        local channels groups
+        channels=($(grep '^Channel' "$config_file" | awk '{print $2}'))
+        groups=($(grep '^Group' "$config_file" | awk '{print $2}'))
+    fi
+
+    _arguments -s \
+        "${opts[@]}" \
+        '*: :->channels_groups'
+
+    case $state in
+        channels_groups)
+            _values 'channels and groups' "${channels[@]}" "${groups[@]}"
+            ;;
+    esac
+}
+
+# Register the completion function
+compdef _qpdf qpdf

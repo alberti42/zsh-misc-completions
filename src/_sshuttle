@@ -1,0 +1,94 @@
+#compdef sshuttle
+# ------------------------------------------------------------------------------
+#
+#  Completion script for sshuttle
+#  (https://sshuttle.readthedocs.io/)
+#
+#  Author: Andrea Alberti (2024)
+#
+# ------------------------------------------------------------------------------
+
+# This function extracts valid host names from the ~/.ssh/config file.
+_get_ssh_config_hosts() {
+    local config_file="${HOME}/.ssh/config"
+    [ -r "${config_file}" ] || return
+    grep -i '^\s*Host ' "${config_file}" | awk '{print $2}' | while read -r line; do
+        # Skip wildcard entries
+        [[ "${line}" == *\** ]] && continue
+        echo "${line}"
+    done
+}
+
+# This function checks if any word in the current command line matches a valid host.
+_host_already_provided() {
+    local -a hosts
+    hosts=($(_get_ssh_config_hosts))
+    for word in "${words[@]}"; do
+        if [[ " ${hosts[@]} " == *" $word "* ]]; then
+            return 0  # Host found
+        fi
+    done
+    return 1  # No host found
+}
+
+_sshuttle() {
+    local curcontext="$curcontext" state line
+    local -i ret=1
+
+    # Get valid hosts from ~/.ssh/config
+    local hosts
+    hosts=($(_get_ssh_config_hosts))
+
+    _arguments -s -S -C \
+        '(-h --help)'{-h,--help}'[show this help message and exit]' \
+        '(-l --listen)'{-l+,--listen=}'[transproxy to this IP address and port number]:[IP:]PORT:_ports' \
+        '(-H --auto-hosts)'{-H,--auto-hosts}'[scan remote hostnames and update /etc/hosts]' \
+        '(-N --auto-nets)'{-N,--auto-nets}'[automatically determine subnets to route]' \
+        '(--dns)'--dns'[capture local DNS requests and forward them to the remote DNS server]' \
+        '(--ns-hosts)'--ns-hosts='[capture and forward DNS requests made to specific servers]:IP[,IP]' \
+        '(--to-ns)'--to-ns='[the DNS server to forward requests to]:IP[:PORT]' \
+        '(--method)'--method='[specify routing method]:auto nat nft tproxy pf ipfw' \
+        '(-r --remote)'{-r+,--remote=}'[remote SSH hostname and optional credentials]:[USERNAME[:PASSWORD]@]ADDR[:PORT]' \
+        '(-x --exclude)'{-x+,--exclude=}'[exclude specific subnets]:IP/MASK[:PORT[-PORT]]' \
+        '(-X --exclude-from)'{-X+,--exclude-from=}'[exclude subnets listed in a file]:file:_files' \
+        '(-v --verbose)'{-v,--verbose}'[increase verbosity; can be used multiple times]' \
+        '(-V --version)'{-V,--version}'[display the sshuttle version and exit]' \
+        '(-e --ssh-cmd)'{-e+,--ssh-cmd=}'[specify the SSH command to use]:command:_command_names -e' \
+        '(--seed-hosts)'--seed-hosts='[comma-separated list of hostnames for initial scan]:HOSTNAME[,HOSTNAME]' \
+        '(--no-latency-control)'--no-latency-control'[disable latency control to improve bandwidth benchmarks]' \
+        '(--latency-buffer-size)'--latency-buffer-size='[size of latency control buffer]:size' \
+        '(--wrap)'--wrap='[restart counting channel numbers after this value]:number' \
+        '(--disable-ipv6)'--disable-ipv6'[disable IPv6 support]' \
+        '(-D --daemon)'{-D,--daemon}'[run in the background as a daemon]' \
+        '(-s --subnets)'{-s+,--subnets=}'[file containing subnets]:file:_files' \
+        '(--syslog)'--syslog'[send log messages to syslog; default with --daemon]' \
+        '(--pidfile)'--pidfile='[pidfile name for daemon mode]:file:_files' \
+        '(--user)'--user='[apply rules only to this Linux user]:username:_users' \
+        '(--group)'--group='[apply rules only to this Linux group]:group:_groups' \
+        '(--firewall)'--firewall'[internal use only]' \
+        '(--hostwatch)'--hostwatch'[internal use only]' \
+        '(--sudoers-no-modify)'--sudoers-no-modify'[print sudo configuration for passwordless operation]' \
+        '(--sudoers-user)'--sudoers-user='[specify sudo user or group for passwordless operation]:user/group' \
+        '(--no-sudo-pythonpath)'--no-sudo-pythonpath'[disable PYTHONPATH when invoking sudo]' \
+        '(-t --tmark)'{-t+,--tmark=}'[traffic mark for TPROXY in hexadecimal]:MARK' \
+        '*: :->args' && ret=0
+
+    if [[ -n $state ]]; then
+        case $state in
+            args)
+                if _host_already_provided; then
+                    # Do not suggest anything if a host is already provided
+                    return 0
+                else
+                    # Suggest valid hosts
+                    _values 'valid hosts' "${hosts[@]}" && ret=0
+                fi
+                ;;
+        esac
+    fi
+
+    return ret
+}
+
+# Register the function with compdef
+compdef _sshuttle sshuttle

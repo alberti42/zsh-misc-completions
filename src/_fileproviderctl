@@ -1,0 +1,72 @@
+#compdef fileproviderctl
+
+_fileproviderctl() {
+    local -a commands
+    local -a opts
+    commands=(
+        'listproviders:List all providers'
+        'thumbnail:Generate a thumbnail'
+        'attributes:Show attributes'
+        'dump:Dump information'
+        'signal:Send a signal'
+        'materialize:Materialize an item'
+        'evict:Evict an item'
+        'coordinate:Coordinate items'
+        'stabilize:Stabilize an item'
+        'evaluate:Evaluate an item'
+        'domain:Manage domains'
+        'interactive-scheduling:Interactive scheduling'
+        'check:Check something'
+        'repair:Repair something'
+        'obfuscate:Obfuscate something'
+    )
+
+    _arguments \
+        '1:command:->command' \
+        '*:args:->args'
+
+    case $state in
+        command)
+            _describe 'command' commands
+            ;;
+        args)
+            case $words[1] in
+                thumbnail)
+                    _arguments '<provider>:Provider' '<domain>:Domain' '<itemid>:Item ID' '<url>:URL'
+                    ;;
+                attributes)
+                    _arguments '--direct[Direct]'
+                    ;;
+                dump)
+                    _arguments '--limit-dump-size[Limit dump size]'
+                    ;;
+                signal)
+                    _arguments '<provider>:Provider' '<item id>:Item ID'
+                    ;;
+                evict)
+                    _arguments '-n[Namespace]' '--namespace[Namespace]'
+                    ;;
+                coordinate)
+                    _arguments '-R[Recursive]' '--recursive[Recursive]' '-r[Read]' '--read[Read]' '-w[Write]' '--write[Write]' '-d[Delete]' '--delete[Delete]' '-t[Time]' '--time[Time]' '-e[Debug]' '--debug[Debug]'
+                    ;;
+                stabilize)
+                    _arguments '-B[Barrier]' '--barrier[Barrier]'
+                    ;;
+                check|repair)
+                    _arguments '-f[Flag]' '-a[Path]:Path' '-b[Path]:Path' '-o[Path]:Path' '-P[Option P]' '-d[Option D]' '-v[Option V]' '-m[Option M] [providerDomainID]:Provider Domain ID'
+                    ;;
+                domain)
+                    _arguments '<action>:Action' '[<domainid>]:Domain ID'
+                    ;;
+                evaluate)
+                    _arguments '<item>:Item' '<action>:Action' '[<item>]:Item' '<target item>:Target Item'
+                    ;;
+                *)
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+# Register the completion function
+compdef _fileproviderctl fileproviderctl

@@ -1,0 +1,47 @@
+#compdef brctl
+
+_brctl() {
+    local -a commands
+    local -a log_opts
+    commands=(
+        'monitor:Monitor the bridge'
+        'log:Log bridge actions'
+        'status:Show bridge status'
+        'kick:Kick a device from the bridge'
+        'wait-for-sync:Wait for bridge sync'
+    )
+    log_opts=(
+        '--color[Enable color output]'
+        '--path[Specify path]'
+        '--home[Specify home directory]'
+        '--filter[Apply filter]'
+        '--multiline[Enable multiline output]'
+        '-n[Show n lines]'
+        '-p[Page output]'
+        '--page[Page output]'
+        '--wait[Wait for log output]'
+        '--shorten[Shorten log entries]'
+        '--digest[Show log digest]'
+    )
+
+    _arguments \
+        '1:command:->command' \
+        '*:args:->args'
+
+    case $state in
+        command)
+            _describe 'command' commands
+            ;;
+        args)
+            case $words[1] in
+                log)
+                    _arguments "${log_opts[@]}"
+                    ;;
+                *)
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+compdef _brctl brctl
