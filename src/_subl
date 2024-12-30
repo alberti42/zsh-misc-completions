@@ -1,0 +1,29 @@
+#compdef subl
+
+_subl() {
+
+  # Define the completion function
+  _arguments -s \
+    '--project[Load the given project]:project file:_files' \
+    '--command[Run the given command]:command:' \
+    '-n[Open a new window]' \
+    '--new-window[Open a new window]' \
+    '--launch-or-new-window[Only open a new window if the application is open]' \
+    '-a[Add folders to the current window]' \
+    '--add[Add folders to the current window]' \
+    '-w[Wait for the files to be closed before returning]' \
+    '--wait[Wait for the files to be closed before returning]' \
+    '-b[Don’t activate the application]' \
+    '--background[Don’t activate the application]' \
+    '-s[Keep the application activated after closing the file]' \
+    '--stay[Keep the application activated after closing the file]' \
+    '--safe-mode[Launch using a sandboxed (clean) environment]' \
+    '-h[Show help and exit]' \
+    '--help[Show help and exit]' \
+    '-v[Show version and exit]' \
+    '--version[Show version and exit]' \
+    '*:files:_files'
+}
+
+# Register the function with compdef
+compdef _subl subl

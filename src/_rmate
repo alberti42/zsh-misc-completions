@@ -1,0 +1,24 @@
+#compdef rmate
+
+_rmate() {
+
+  # Define the completion function
+  _arguments -s \
+    {-c,--create}'[Create a new file if the given file name does not exist]' \
+    {-f,--force}'[Open even if file is not writable]' \
+    {-h,--help}'[Prints help information]' \
+    {-k,--keep}'[Have TextMate retain window focus after file is closed]' \
+    {-V,--version}'[Prints version information]' \
+    {-v,--verbose}'[Verbose logging messages (use multiple times for higher verbosity)]' \
+    {-w,--wait}'[Wait for file to be closed by TextMate/Sublime Text]' \
+    {-H,--host}'[Connect to HOST (defaults to localhost)]:(host):' \
+    {-l,--lines}'[Place caret on specific line(s)]:lines:{_sequence}' \
+    {-t,--type}'[Treat file as having a specific type]:type:' \
+    {-m,--name}'[Set display name shown in TextMate/Sublime Text]:name:' \
+    {-p,--port}'[Port number to use for connection (default: 52698)]:port:' \
+    '*:files:_files'
+}
+
+# Register the function with compdef
+compdef _rmate rmate
+compdef _rmate rsubl
