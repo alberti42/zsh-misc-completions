@@ -21,4 +21,3 @@ _rmate() {
 
 # Register the function with compdef
 compdef _rmate rmate
-compdef _rmate rsubl
