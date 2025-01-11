@@ -1,0 +1,16 @@
+#compdef -P pip[0-9.]# _pip
+
+_pip() {
+  # Check if the command exists
+  if ! command -v -- $words[1] &>/dev/null; then
+    return 1  # Exit silently if the executable is not found
+  fi
+
+  # Run the pip autocomplete logic
+  compadd $( COMP_WORDS="$words[*]" \
+             COMP_CWORD=$((CURRENT-1)) \
+             PIP_AUTO_COMPLETE=1 $words[1] 2>/dev/null )
+}
+
+# Register the function for autocompletion for pip commands
+compdef _pip -P 'pip[0-9.]#'
