@@ -1,9 +1,7 @@
 #compdef rsubl
 
-# Autoload _rmate to ensure it is available
-autoload -Uz _rmate
+# Autoload _rmate without executing it (+X) to ensure it is available
+autoload +X -Uz _rmate
 
 # Forward all arguments to _rmate
-_rsubl() {
-  _rmate "$@"
-}
+_rmate "$@"

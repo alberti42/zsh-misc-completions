@@ -20,4 +20,4 @@ _rmate() {
 }
 
 # Register the function with compdef
-compdef _rmate rmate
+_rmate "$@"

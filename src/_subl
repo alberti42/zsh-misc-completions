@@ -1,7 +1,6 @@
 #compdef subl
 
 _subl() {
-
   # Define the completion function
   _arguments -s \
     '--project[Load the given project]:project file:_files' \
@@ -26,4 +25,4 @@ _subl() {
 }
 
 # Register the function with compdef
-compdef _subl subl
+_subl "$@"

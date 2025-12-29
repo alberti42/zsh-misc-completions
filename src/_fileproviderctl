@@ -69,4 +69,4 @@ _fileproviderctl() {
 }
 
 # Register the completion function
-compdef _fileproviderctl fileproviderctl
+_fileproviderctl "$@"

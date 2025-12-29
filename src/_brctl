@@ -44,4 +44,4 @@ _brctl() {
     esac
 }
 
-compdef _brctl brctl
+_brctl "$@"

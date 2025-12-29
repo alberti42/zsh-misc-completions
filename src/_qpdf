@@ -2,7 +2,6 @@
 
 _qpdf() {
     local curcontext="$curcontext" state line
-    typeset -A opt_args
 
     # Path to the mbsync configuration file.
     local config_file="$HOME/.mbsyncrc"
@@ -66,4 +65,4 @@ _qpdf() {
 }
 
 # Register the completion function
-compdef _qpdf qpdf
+_qpdf "@$"

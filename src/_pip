@@ -12,5 +12,4 @@ _pip() {
              PIP_AUTO_COMPLETE=1 $words[1] 2>/dev/null )
 }
 
-# Register the function for autocompletion for pip commands
-compdef _pip -P 'pip[0-9.]#'
+_pip "$@"
