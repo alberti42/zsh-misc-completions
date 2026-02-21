@@ -47,17 +47,18 @@ __launchctl_list_domain_targets() {
 }
 
 __launchctl_list_labels() {
-    launchctl list 2>/dev/null | tail -n +2 | awk '{print $3}' | \
+    # Use tab as delimiter: labels may contain spaces (e.g. "Warning for low battery…").
+    launchctl list 2>/dev/null | awk -F'\t' 'NR>1 {print $3}' | \
         grep -vE '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
 }
 
 __launchctl_list_started() {
-    launchctl list 2>/dev/null | tail -n +2 | awk '$1 != "-" {print $3}' | \
+    launchctl list 2>/dev/null | awk -F'\t' 'NR>1 && $1 != "-" {print $3}' | \
         grep -vE '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
 }
 
 __launchctl_list_stopped() {
-    launchctl list 2>/dev/null | tail -n +2 | awk '$1 == "-" {print $3}' | \
+    launchctl list 2>/dev/null | awk -F'\t' 'NR>1 && $1 == "-" {print $3}' | \
         grep -vE '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
 }
 
@@ -482,3 +483,5 @@ _launchctl() {
 }
 
 _launchctl "$@"
+
+# vim: set expandtab tabstop=4 shiftwidth=4 softtabstop=4 :
