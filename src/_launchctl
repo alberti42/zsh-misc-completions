@@ -32,7 +32,8 @@ __launchctl_list_pids() {
 }
 
 __launchctl_list_uids() {
-    dscl . -list /Users UniqueID 2>/dev/null | awk '{print $2}' | sort -n
+    # Only include UIDs >= 500; macOS reserves 0-499 for system service accounts.
+    dscl . -list /Users UniqueID 2>/dev/null | awk '$2 >= 500 {print $2}' | sort -n
 }
 
 __launchctl_list_domain_targets() {
