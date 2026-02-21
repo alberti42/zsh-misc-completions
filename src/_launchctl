@@ -3,12 +3,6 @@
 # Credits: Camden Narzt (2026), MIT license (https://github.com/CamJN/launchctl-completion)
 
 # TODO:
-  #  Some subcommands (asuser, bsexec, debug, submit) accept another shell command as an
-  #  argument. Currently, only the command name is completed — not its arguments. Improve
-  #  this to recursively complete the sub-command's arguments, similar to how sudo
-  #  completion works. See the FIXMEs below and the reference implementation:
-  #      https://github.com/scop/bash-completion/blob/main/completions/sudo#L17
-  #
   #  Several launchctl arguments have no known programmatic way to enumerate:
   #  audit session IDs (asids), XPC tokens, XPC service names, and Mach port names.
   #  Find a way to list these so they can be completed.
@@ -149,8 +143,9 @@ __launchctl_complete_asuser() {
         uids=( ${(f)"$(__launchctl_list_uids)"} )
         compadd -a uids
     else
-        # FIXME: full command completion like sudo
-        _command_names -e
+        shift words
+        (( CURRENT-- ))
+        _normal
     fi
 }
 
@@ -192,8 +187,9 @@ __launchctl_complete_bsexec() {
         pids=( ${(f)"$(__launchctl_list_pids)"} )
         compadd -a pids
     else
-        # FIXME: full command completion like sudo
-        _command_names -e
+        shift words
+        (( CURRENT-- ))
+        _normal
     fi
 }
 
@@ -226,8 +222,9 @@ __launchctl_complete_debug() {
 
     local double_dash_idx=$words[(I)--]
     if (( double_dash_idx && CURRENT > double_dash_idx )); then
-        # FIXME: full command completion like sudo
-        _command_names -e
+        shift $double_dash_idx words
+        (( CURRENT -= double_dash_idx ))
+        _normal
         return
     fi
 
@@ -335,8 +332,9 @@ __launchctl_complete_submit() {
     # submit -l label [-p executable] [-o stdout-path] [-e stderr-path] -- command [args]
     local double_dash_idx=$words[(I)--]
     if (( double_dash_idx && CURRENT > double_dash_idx )); then
-        # FIXME: full command completion like sudo
-        _command_names -e
+        shift $double_dash_idx words
+        (( CURRENT -= double_dash_idx ))
+        _normal
         return
     fi
 
