@@ -9,21 +9,33 @@ This repository contains a collection of miscellaneous Zsh completions for vario
 ```
 ├── src
 │   ├── _brctl
+│   ├── _docker
 │   ├── _fileproviderctl
+│   ├── _launchctl
 │   ├── _mbsync
+│   ├── _pip
 │   ├── _pytr
 │   ├── _qpdf
-│   └── _sshuttle
+│   ├── _rmate
+│   ├── _rsubl
+│   ├── _sshuttle
+│   └── _subl
 └── zsh-misc-completions.plugin.zsh
 ```
 
 - `src/`: Contains individual completion scripts for specific commands.
   - `_brctl`: Completion for `brctl` (bridge management tool).
-  - `_fileproviderctl`: Completion for `fileproviderctl`.
+  - `_docker`: Completion for `docker` (container platform).
+  - `_fileproviderctl`: Completion for `fileproviderctl` (macOS file provider management).
+  - `_launchctl`: Completion for `launchctl` (macOS service management).
   - `_mbsync`: Completion for `mbsync` (mail synchronization tool).
-  - `_pytr`: Completion for `pytr`.
+  - `_pip`: Completion for `pip` and versioned variants like `pip3` (Python package manager).
+  - `_pytr`: Completion for `pytr` (Trade Republic portfolio tool).
   - `_qpdf`: Completion for `qpdf` (PDF transformation tool).
+  - `_rmate`: Completion for `rmate` (remote editing via TextMate/compatible editors).
+  - `_rsubl`: Completion for `rsubl` (remote editing via Sublime Text; reuses `_rmate`).
   - `_sshuttle`: Completion for `sshuttle` (VPN over SSH).
+  - `_subl`: Completion for `subl` (Sublime Text command-line tool).
 - `zsh-misc-completions.plugin.zsh`: Main plugin script to load all the completions.
 
 ## Installation
