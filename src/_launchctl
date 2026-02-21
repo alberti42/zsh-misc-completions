@@ -294,7 +294,7 @@ __launchctl_complete_kickstart() {
         '(-p)-p[print PID of service after start]' \
         ':service-target:->st'
     case $state in
-        st) __launchctl_complete_service_target started ;;
+        st) __launchctl_complete_service_target all ;;
     esac
 }
 
