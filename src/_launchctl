@@ -1,715 +1,460 @@
-#!/usr/local/bin/bash
-# Bash completion support for launchctl
+#compdef launchctl
 
 # Credits: Camden Narzt (2026), MIT license (https://github.com/CamJN/launchctl-completion)
 
 # TODO:
-#  fix commands that run other comamands to handle completion like sudo does (grep FIXME)
+#  fix commands that run other commands to handle completion like sudo does (grep FIXME)
 #      https://github.com/scop/bash-completion/blob/main/completions/sudo#L17
-#      https://stackoverflow.com/questions/29231639/bash-completion-from-another-completion
-#  fix file path completion putting spaces after directories
-#      check if cur is a file otherwise add -o nospace ?
 #  find way to list: asids, xpc-tokens, xsc-names, port-names
 #  package section/segment dumper and install if missing
 #  list deps like fd, segment_dumper
 
-# -X '!*.plist'
-
-# complete plists files when pwd is one of /library/ ~/library or a launch* dir in those
-
-
-log () {
-    echo "$*" >> /tmp/debug.log
+__launchctl_paths() {
+    local -a files
+    # -N: nullglob (no error if no match), .: regular files only
+    files=( /Library/Launch*/*(-N.) ~/Library/Launch*/*(-N.) )
+    print -l "${files[@]/#${HOME}/~}"
 }
 
-__launchctl_paths ()
-{
-    readarray -t raw_files < <(\ls -1d {~,}/Library/Launch*/*)
-    printf '%s\n' "${raw_files[@]/#$HOME/\~}"
+__launchctl_list_segments_and_sections() {
+    local -a pathdirs
+    pathdirs=( ${(s/:/)PATH} )
+    fd . "${pathdirs[@]}" --type x 2>/dev/null | xargs segment_dumper 2>/dev/null | sort -u
 }
 
-__launchctl_array_contains ()
-{
-    local -n array=$1
-    local element=$2
-    for el in "${array[@]}"; do
-        if [ "$el" = "$element" ]; then
-            return 0
-        fi
-    done
-    return 1
+__launchctl_list_pids() {
+    command ps axo pid= | tr -d ' ' | sort -n
 }
 
-__launchctl_list_segments_and_sections ()
-{
-    tr : ' ' <<< "$PATH" | 2>/dev/null xargs fd . --type x | xargs segment_dumper 2>/dev/null | sort -u
+__launchctl_list_uids() {
+    dscl . -list /Users UniqueID 2>/dev/null | awk '{print $2}' | sort -n
 }
 
-__launchctl_list_umasks ()
-{
-    # shellcheck disable=SC2155
-    local inner="$(seq 0 7 | paste -sd , -)"
-    eval echo "{$inner}{$inner}{$inner}"
-}
-
-__launchctl_list_pids ()
-{
-    command ps axo pid= | tr -d ' ' | sort
-}
-
-__launchctl_list_uids ()
-{
-    dscl . -list /Users UniqueID 2>/dev/null | cut -wf 2 | sort
-}
-
-__launchctl_list_asids ()
-{
-    # audit session identifiers...
-    # ps -p $$ -o sess=
-    echo
-}
-
-__launchctl_list_domains ()
-{
-    echo {system,user,login,gui,pid} | tr ' ' '\n'
-}
-
-__launchctl_list_domain_targets ()
-{
-    case "${1:0:1}" in
-        s) echo system; return;;
-        p) __launchctl_list_pids  | xargs -n1 printf 'pid/%d\n';   return;;
-        g) __launchctl_list_uids  | xargs -n1 printf 'gui/%d\n';   return;;
-        l) __launchctl_list_asids | xargs -n1 printf 'login/%d\n'; return;;
-        u) __launchctl_list_uids  | xargs -n1 printf 'user/%d\n';  return;;
+__launchctl_list_domain_targets() {
+    case "${1[1]}" in
+        s) print system ;;
+        p) __launchctl_list_pids | while IFS= read -r pid; do print "pid/${pid}"; done ;;
+        g) __launchctl_list_uids | while IFS= read -r uid; do print "gui/${uid}"; done ;;
+        l) ;; # audit session IDs unavailable
+        u) __launchctl_list_uids | while IFS= read -r uid; do print "user/${uid}"; done ;;
     esac
 }
 
-__launchctl_list_service_targets ()
-{
-    case $2 in
-        started) __launchctl_list_started | xargs -n1 printf "${1%/}/%s\n" | grep -e "^$1/"; return;;
-        stopped) __launchctl_list_stopped | xargs -n1 printf "${1%/}/%s\n" | grep -e "^$1/"; return;;
-        all)     __launchctl_list_labels  | xargs -n1 printf "${1%/}/%s\n" | grep -e "^$1/"; return;;
-    esac
+__launchctl_list_labels() {
+    launchctl list 2>/dev/null | tail -n +2 | awk '{print $3}' | \
+        grep -vE '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
 }
 
-__launchctl_list_labels ()
-{
-    launchctl list | tail -n +2 | cut -f3 | grep -vEe '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
+__launchctl_list_started() {
+    launchctl list 2>/dev/null | tail -n +2 | awk '$1 != "-" {print $3}' | \
+        grep -vE '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
 }
 
-__launchctl_list_started ()
-{
-    launchctl list | tail -n +2 | awk '$1 != "-"' | cut -f3 | grep -vEe '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
+__launchctl_list_stopped() {
+    launchctl list 2>/dev/null | tail -n +2 | awk '$1 == "-" {print $3}' | \
+        grep -vE '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
 }
 
-__launchctl_list_stopped ()
-{
-    launchctl list | tail -n +2 | awk '$1 == "-"' | cut -f3 | grep -vEe '0x[0-9a-fA-F]+\.(anonymous|mach_init)'
-}
-
-__launchctl_list_envvars ()
-{
+__launchctl_list_envvars() {
     printenv | cut -d= -f1 | sort -u
 }
 
+# Progressive domain/uid/service target completion.
+# $1 = filter: started | stopped | all | domain
+# "domain" completes only up to the domain-target level (no service name).
+__launchctl_complete_service_target() {
+    local filter=${1:-all}
+    local cur="${PREFIX}${SUFFIX}"
+    local slash_count=${#${cur//[^\/]/}}
+    local -a items
 
-_launchctl2 ()
-{
-    compopt +o default
-    COMPREPLY=()
-    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if (( slash_count == 0 )); then
+        compadd -S '/' -r '/' -- system gui user pid login
 
-    # Subcommand list
-    local subcommands=(asuser attach blame bootout bootstrap bsexec config debug disable enable error examine getenv help hostinfo kickstart kill limit list load managername managerpid manageruid plist print print-cache print-disabled procinfo reboot remove resolveport setenv start stop submit unload unsetenv variant version bootshell print-token dump-xsc dumpjpcategory dumpstate)
+    elif (( slash_count == 1 )); then
+        local domain="${cur%%/*}"
+        case $domain in
+            system)
+                # system is a complete domain target on its own; go straight to services
+                if [[ $filter != domain ]]; then
+                    compset -P 'system/'
+                    items=( ${(f)"$(__launchctl_list_labels)"} )
+                    compadd -a items
+                fi
+                ;;
+            gui|user)
+                compset -P "${domain}/"
+                items=( ${(f)"$(__launchctl_list_uids)"} )
+                if [[ $filter == domain ]]; then
+                    compadd -a items
+                else
+                    compadd -S '/' -r '/' -a items
+                fi
+                ;;
+            pid)
+                compset -P 'pid/'
+                items=( ${(f)"$(__launchctl_list_pids)"} )
+                if [[ $filter == domain ]]; then
+                    compadd -a items
+                else
+                    compadd -S '/' -r '/' -a items
+                fi
+                ;;
+            login)
+                compset -P 'login/'
+                # audit session IDs unavailable
+                ;;
+        esac
 
-    if [[ ${COMP_CWORD} -eq 1 ]]; then
-        compgen -V COMPREPLY -W "${subcommands[*]}" -- "${cur}"
-        return
+    else
+        [[ $filter == domain ]] && return
+        compset -P '*/'
+        case $filter in
+            started) items=( ${(f)"$(__launchctl_list_started)"} ) ;;
+            stopped) items=( ${(f)"$(__launchctl_list_stopped)"} ) ;;
+            *)       items=( ${(f)"$(__launchctl_list_labels)"} ) ;;
+        esac
+        compadd -a items
     fi
+}
 
-    log "${COMP_WORDS[1]} ${COMP_CWORD}"
-    case "${COMP_WORDS[1]}" in
-        asuser)
-            # asuser UID command [args]
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                local possibilities=("$(__launchctl_list_uids | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                # TODO FIXME
-                compgen -V COMPREPLY -cf -- "${cur}"
-            fi
-            return
-            ;;
-        attach)
-            # attach [-ksx] service-target
-            local flag_possibilities=(-k -s -x)
-            local possibilities=()
+# Plist file paths with tilde substitution, plus parent dirs as shortcuts.
+# Used by bootout, bootstrap, load, unload.
+__launchctl_complete_plist_paths() {
+    local -a files
+    files=( ${(f)"$(__launchctl_paths)"} )
+    compadd -f -- "${files[@]}"
+    local -a top_dirs
+    top_dirs=( ${(u)files:h:h} )
+    compadd -f -S '/' -r '/' -- "${top_dirs[@]}"
+}
 
-            for value in "${flag_possibilities[@]}"; do
-                if ! __launchctl_array_contains COMP_WORDS "$value"; then
-                    possibilities+=("$value")
-                fi
-            done
+# --- Subcommand handlers ---
 
-            if __launchctl_array_contains flag_possibilities "${cur}"; then
-                possibilities+=("${cur}")
-            fi
+__launchctl_complete_asuser() {
+    # asuser UID command [args]
+    if (( CURRENT == 1 )); then
+        local -a uids
+        uids=( ${(f)"$(__launchctl_list_uids)"} )
+        compadd -a uids
+    else
+        # FIXME: full command completion like sudo
+        _command_names -e
+    fi
+}
 
-            if [ "${cur:0:1}" = '-' ]; then
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [ -z "${cur}" ]; then
-                possibilities=("$(__launchctl_list_domains | xargs -n1 printf '%s/\n' | paste -sd ' ' -)")
-                compgen -o nospace -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [[ "${cur}" != */*/* ]]; then
-                possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                compopt -o nospace #doesn't work if set in compgen here...
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                possibilities=("$(__launchctl_list_service_targets "${cur%/*}" started | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            fi
+__launchctl_complete_attach() {
+    # attach [-ksx] service-target
+    local state
+    _arguments -s -S \
+        '(-k)-k[kill service before attaching]' \
+        '(-s)-s[stop at first instruction]' \
+        '(-x)-x[do not print connection info]' \
+        ':service-target:->st'
+    case $state in
+        st) __launchctl_complete_service_target started ;;
+    esac
+}
 
-            return
-            ;;
-        blame)
-            # blame service-target
-            local possibilities=()
-            if [ -z "${cur}" ]; then
-                possibilities=("$(__launchctl_list_domains | xargs -n1 printf '%s/\n' | paste -sd ' ' -)")
-                compgen -o nospace -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [[ "${cur}" != */*/* ]]; then
-                possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                compopt -o nospace #doesn't work if set in compgen here...
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                possibilities=("$(__launchctl_list_service_targets "${cur%/*}" started | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            fi
-            return
-            ;;
-        bootout)
-            # bootout domain-target [service-path service-path2 ...] | service-target
-            local possibilities=()
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                if [ -z "${cur}" ]; then
-                    possibilities=("$(__launchctl_list_domains | xargs -n1 printf '%s/\n' | paste -sd ' ' -)")
-                    compgen -o nospace -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                else
-                    possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                    compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                fi
-            else
-                local prev="${COMP_WORDS[2]}"
-                readarray -t files < <(__launchctl_paths)
-                if [ -z "${cur}" ]; then
-                    compopt -o nospace #doesn't work if set in compgen here...
-                    compgen -o nospace -S / -V COMPREPLY_RAW -W "${files[*]/%Library*/Library} $prev" -- "${cur}"
-                    COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-                elif [ "${cur:0:1}" = '~' ] || [ "${cur:0:1}" = '/' ]; then
-                    eval "exp_cur=$cur"
-                    compgen -V COMPREPLY_RAW -W "${files[*]}" -- "${exp_cur}"
-                    COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-                elif [[ "${cur}" != "$prev/"* ]]; then
-                    compopt -o nospace #doesn't work if set in compgen here...
-                    compgen -o nospace -S / -V COMPREPLY -W "$prev" -- "${cur}"
-                else
-                    possibilities=("$(__launchctl_list_service_targets "${cur%/*}" started | paste -sd ' ' -)")
-                    compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                fi
-            fi
-            return
-            ;;
-        bootstrap)
-            # bootstrap domain-target [service-path service-path2 ...] | service-target
-            local possibilities=()
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                if [ -z "${cur}" ]; then
-                    possibilities=("$(__launchctl_list_domains | xargs -n1 printf '%s/\n' | paste -sd ' ' -)")
-                    compgen -o nospace -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                else
-                    possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                    compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                fi
-            else
-                local prev="${COMP_WORDS[2]}"
-                readarray -t files < <(__launchctl_paths)
-                if [ -z "${cur}" ]; then
-                    compopt -o nospace #doesn't work if set in compgen here...
-                    compgen -o nospace -S / -V COMPREPLY_RAW -W "${files[*]/%Library*/Library} $prev" -- "${cur}"
-                    COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-                elif [ "${cur:0:1}" = '~' ] || [ "${cur:0:1}" = '/' ]; then
-                    eval "exp_cur=$cur"
-                    compgen -V COMPREPLY_RAW -W "${files[*]}" -- "${exp_cur}"
-                    COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-                elif [[ "${cur}" != "$prev/"* ]]; then
-                    compopt -o nospace #doesn't work if set in compgen here...
-                    compgen -o nospace -S / -V COMPREPLY -W "$prev" -- "${cur}"
-                else
-                    possibilities=("$(__launchctl_list_service_targets "${cur%/*}" stopped | paste -sd ' ' -)")
-                    compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                fi
-            fi
-            return
-            ;;
-        bsexec)
-            # bsexec PID command [args]
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                local possibilities=("$(__launchctl_list_pids | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                # TODO FIXME
-                compgen -V COMPREPLY -cf -- "${cur}"
-            fi
-            return
-            ;;
-        config)
-            # config system | user parameter value
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                Compgen -V COMPREPLY -W "system user" -- "${cur}"
-            elif [[ ${COMP_CWORD} -eq 3 ]]; then
-                compgen -V COMPREPLY -W "umask path" -- "${cur}"
-            else
-                case "${COMP_WORDS[3]}" in
-                    umask) compgen -V COMPREPLY -W "$(__launchctl_list_umasks)" -- "${cur}";;
-                    path) compgen -o nospace -V COMPREPLY -f -- "${cur}";;
-                esac
-            fi
-            return
-            ;;
-        debug)
-            # debug service-target [--program <program path>] [--guard-malloc] [--malloc-stack-logging] [--debug-libraries] [--introspection-libraries] [--NSZombie] [--32] [--stdin] [--stdout] [--stderr] [--environment] [--] [argv0 argv1 argv2 ...]
-            local flag_possibilities=(--program --guard-malloc --malloc-stack-logging --malloc-nano-allocator --start-suspended --debug-libraries --introspection-libraries --NSZombie --32 --stdin --stdout --stderr --environment --)
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                local possibilities=()
-                if [ -z "${cur}" ]; then
-                    possibilities=("$(__launchctl_list_domains | paste -sd ' ' -)")
-                    compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                elif [[ "${cur}" != */*/* ]]; then
-                    possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                    compopt -o nospace #doesn't work if set in compgen here...
-                    compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                else
-                    possibilities=("$(__launchctl_list_service_targets "${cur%/*}" all | paste -sd ' ' -)")
-                    compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                fi
-            elif [[ ${COMP_CWORD} -eq 3 ]]; then
-                compgen -V COMPREPLY -W "${flag_possibilities[*]}" -- "${cur}"
-            elif [[ ${COMP_CWORD} -gt 3 ]]; then
-                if __launchctl_array_contains COMP_WORDS --; then
-                    # complete args for debug command
-                    compgen -V COMPREPLY -cf -- "${cur}"
-                else
-                    case "${COMP_WORDS[COMP_CWORD-1]}" in
-                        --program)
-                            # TODO FIXME
-                            compgen -V COMPREPLY -cf -- "${cur}"
-                            return
-                            ;;
-                        --stdin|--stdout|--stderr)
-                            compgen -V COMPREPLY -f -- "${cur}"
-                            return
-                            ;;
-                        --environment)
-                            # [VARIABLE0=value0 VARIABLE1=value1 ...]
-                            # maybe lookup $cur in word list and add = with nospace...
-                            return
-                            ;;
-                        --)
-                            # should be unreachable...
-                            compgen -V COMPREPLY -cf -- "${cur}"
-                            return
-                            ;;
-                        *)
-                            local possibilities=()
-                            for value in "${flag_possibilities[@]}"; do
-                                if ! __launchctl_array_contains COMP_WORDS "$value"; then
-                                    possibilities+=("$value")
-                                fi
-                            done
-                            if __launchctl_array_contains flag_possibilities "${cur}"; then
-                                possibilities+=("${cur}")
-                            fi
-                            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                            return
-                            ;;
-                    esac
-                fi
-            fi
-            return
-            ;;
-        disable)
-            # disable service-target
-            if [ -z "${cur}" ]; then
-                local possibilities=("$(__launchctl_list_domains | paste -sd ' ' -)")
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [[ "${cur}" != */*/* ]]; then
-                local possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                compopt -o nospace #doesn't work if set in compgen here...
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                local possibilities=("$(__launchctl_list_service_targets "${cur%/*}" started | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            fi
-            return
-            ;;
-        enable)
-            # enable service-target
-            if [ -z "${cur}" ]; then
-                local possibilities=("$(__launchctl_list_domains | paste -sd ' ' -)")
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [[ "${cur}" != */*/* ]]; then
-                local possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                compopt -o nospace #doesn't work if set in compgen here...
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                local possibilities=("$(__launchctl_list_service_targets "${cur%/*}" stopped | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            fi
-            return
-            ;;
-        error)
-            # error [posix|mach|bootstrap] code
-            local possibilities=()
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                possibilities=(posix mach bootstrap)
-            else
-                case "${COMP_WORDS[2]}" in
-                    bootstrap) possibilities=("$(seq 0 56) $(seq 1000 1003) $(seq 1100 1105) $(seq 1601 1607)");;
-                    mach) possibilities=("$(seq 1 56)");;
-                    posix) possibilities=("$(seq 0 164)");;
-                esac
-            fi
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        examine)
-            # examine [tool arg0 arg1 @PID ...]
-            # TODO FIXME
-            compgen -V COMPREPLY -cf -W '@PID' -- "${cur}"
-            return
-            ;;
-        getenv)
-            # getenv key
-            local possibilities=("$(__launchctl_list_envvars | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        help)
-            # help <subcommand>
-            compgen -V COMPREPLY -W "${subcommands[*]}" -- "${cur}"
-            return
-            ;;
-        hostinfo)
-            # hostinfo
-            return
-            ;;
-        kickstart)
-            # kickstart [-k] [-p] <service-target>
-            local flag_possibilities=(-k -p)
-            local possibilities=()
+__launchctl_complete_bootout() {
+    # bootout domain-target [service-path ...] | service-target
+    if (( CURRENT == 1 )); then
+        __launchctl_complete_service_target started
+    else
+        __launchctl_complete_plist_paths
+    fi
+}
 
-            for value in "${flag_possibilities[@]}"; do
-                if ! __launchctl_array_contains COMP_WORDS "$value"; then
-                    possibilities+=("$value")
-                fi
-            done
+__launchctl_complete_bootstrap() {
+    # bootstrap domain-target [service-path ...] | service-target
+    if (( CURRENT == 1 )); then
+        __launchctl_complete_service_target stopped
+    else
+        __launchctl_complete_plist_paths
+    fi
+}
 
-            if __launchctl_array_contains flag_possibilities "${cur}"; then
-                possibilities+=("${cur}")
-            fi
+__launchctl_complete_bsexec() {
+    # bsexec PID command [args]
+    if (( CURRENT == 1 )); then
+        local -a pids
+        pids=( ${(f)"$(__launchctl_list_pids)"} )
+        compadd -a pids
+    else
+        # FIXME: full command completion like sudo
+        _command_names -e
+    fi
+}
 
-            if [ "${cur:0:1}" = '-' ]; then
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [ -z "${cur}" ]; then
-                possibilities+=("$(__launchctl_list_domains | xargs -n1 printf '%s/\n' | paste -sd ' ' -)")
-                compgen -o nospace -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [[ "${cur}" != */*/* ]]; then
-                possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                compopt -o nospace #doesn't work if set in compgen here...
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                possibilities=("$(__launchctl_list_service_targets "${cur%/*}" started | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            fi
-
-            return
-            ;;
-        kill)
-            # kill <signal-number|signal-name> <service-target>
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                compgen -V COMPREPLY -A signal -W "$(seq 1 31)" -- "${cur}"
-            else
-                if [ -z "${cur}" ]; then
-                    local possibilities=("$(__launchctl_list_domains | paste -sd ' ' -)")
-                    compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                elif [[ "${cur}" != */*/* ]]; then
-                    local possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                    compopt -o nospace #doesn't work if set in compgen here...
-                    compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                else
-                    local possibilities=("$(__launchctl_list_service_targets "${cur%/*}" stopped | paste -sd ' ' -)")
-                    compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                fi
-            fi
-
-            return
-            ;;
-        limit)
-            # limit [<limit-name> [<both-limits> | <soft-limit> <hard-limit>]
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                local possibilities=("cpu filesize data stack core rss memlock maxproc maxfiles")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                compgen -V COMPREPLY -W "unlimited" -- "${cur}"
-            fi
-            return
-            ;;
-        list)
-            # list [service-name]
-            local possibilities=("$(__launchctl_list_labels | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        load)
-            # load [-wF] [-S sessiontype] [-D searchpath] <service-path, service-path2, ...>
-            local flag_possibilities=(-w -F -S -D)
-            local possibilities=()
-            for value in "${flag_possibilities[@]}"; do
-                if ! __launchctl_array_contains COMP_WORDS "$value"; then
-                    possibilities+=("$value")
-                fi
-            done
-            if __launchctl_array_contains flag_possibilities "${cur}"; then
-                possibilities+=("${cur}")
-            fi
-
-            if [[ ${COMP_CWORD} -gt 2 ]]; then
-                case "${COMP_WORDS[COMP_CWORD-1]}" in
-                    -S) compgen -V COMPREPLY -W "Aqua Background LoginWindow StandardIO System" -- "${cur}"; return ;;
-                    -D) compgen -V COMPREPLY -W "system local network user" -- "${cur}"; return ;;
-                esac
-            fi
-
-            readarray -t files < <(__launchctl_paths)
-
-            if [ -z "${cur}" ]; then
-                compgen -V COMPREPLY_RAW -W "${files[*]/%Library*/Library} ${possibilities[*]}" -- "${cur}"
-                COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-            elif [ "${cur:0:1}" = '-' ]; then
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [ "${cur:0:1}" = '~' ]; then
-                    eval "exp_cur=$cur"
-                    # shellcheck disable=SC2154
-                    compgen -V COMPREPLY_RAW -W "${files[*]}" -- "${exp_cur}"
-                    COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-            else
-                compgen -V COMPREPLY -W "${files[*]}" -- "${cur}"
-            fi
-            return
-            ;;
-        managername)
-            # managername
-            return
-            ;;
-        managerpid)
-            # managerpid
-            return
-            ;;
-        manageruid)
-            # manageruid
-            return
-            ;;
-        plist)
-            # plist [segment,section] Mach-O
-            if [[ ${COMP_CWORD} -eq 2 ]]; then
-                local possibilities=("$(__launchctl_list_segments_and_sections | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            else
-                compgen -V COMPREPLY -f -- "${cur}"
-            fi
-            return
-            ;;
-        print)
-            # launchctl print <domain-target> | <service-target>
-            if [ -z "${cur}" ]; then
-                local possibilities=("$(__launchctl_list_domains | paste -sd ' ' -)")
-                compgen -o nospace -S / -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [[ "${cur}" != */*/* ]]; then
-                local possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                compopt -o nospace #doesn't work if set in compgen here...
-                compgen -o nospace -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-                if [ ${#COMPREPLY[@]} -lt 2 ]; then
-                    COMPREPLY+=("${COMPREPLY[@]}/")
-                fi
-            else
-                local possibilities=("$(__launchctl_list_service_targets "${cur%/*}" all | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            fi
-            return
-            ;;
-        print-cache)
-            # print-cache
-            return
-            ;;
-        print-disabled)
-            # print-disabled domain-target
-            if [ -z "${cur}" ]; then
-                local possibilities=("$(__launchctl_list_domains | xargs -n1 printf '%s/\n' | paste -sd ' ' -)")
-                compgen -o nospace -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [[ "${cur}" != */*/* ]]; then
-                local possibilities=("$(__launchctl_list_domain_targets "${cur}" | paste -sd ' ' -)")
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            fi
-            return
-            ;;
-        procinfo)
-            # procinfo pid
-            local possibilities=("$(__launchctl_list_pids | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        reboot)
-            # reboot [system|halt|userspace|logout|apps] [-s]
-            local possibilities=(system halt userspace logout apps)
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        remove)
-            # remove label
-            local possibilities=("$(__launchctl_list_labels | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        resolveport)
-            # resolveport owner-pid port-name
-            local possibilities=("$(__launchctl_list_pids | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        setenv)
-            # setenv key value
-            return
-            ;;
-        start)
-            # start label
-            local possibilities=("$(__launchctl_list_labels | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        stop)
-            # stop label
-            local possibilities=("$(__launchctl_list_labels | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        submit)
-            # submit -l label [-p executable] [-o stdout-path] [-e stderr-path] -- command [arg0] [arg1] [...]
-            local flag_possibilities=(-l -p -o -e)
-
-            __launchctl_array_contains COMP_WORDS "--"
-            local in_command=$?
-
-            if __launchctl_array_contains COMP_WORDS "-l"; then
-                flag_possibilities+=(--)
-            fi
-
-            local possibilities=()
-            for value in "${flag_possibilities[@]}"; do
-                if ! __launchctl_array_contains COMP_WORDS "$value"; then
-                    possibilities+=("$value")
-                fi
-            done
-
-            if __launchctl_array_contains flag_possibilities "${cur}"; then
-                possibilities+=("${cur}")
-            fi
-
-            if [ $in_command -eq 0 ]; then
-                # TODO FIXME
-                compgen -V COMPREPLY -cf -- "${cur}"
-            else
-                case "${COMP_WORDS[COMP_CWORD-1]}" in
-                    -p) compgen -V COMPREPLY -cf -- "${cur}"; return;; # TODO FIXME
-                    -o) compgen -V COMPREPLY -f -- "${cur}"; return;;
-                    -e) compgen -V COMPREPLY -f -- "${cur}"; return;;
-                    -l) return;;
-                    *) compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"; return;;
-                esac
-            fi
-            return
-            ;;
-        unload)
-            # unload [-wF] [-S sessiontype] [-D searchpath] paths ...
-            local flag_possibilities=(-w -F -S -D)
-
-            local possibilities=()
-            for value in "${flag_possibilities[@]}"; do
-                if ! __launchctl_array_contains COMP_WORDS "$value"; then
-                    possibilities+=("$value")
-                fi
-            done
-            if __launchctl_array_contains flag_possibilities "${cur}"; then
-                possibilities+=("${cur}")
-            fi
-            case "${COMP_WORDS[COMP_CWORD-1]}" in
-                -S) compgen -V COMPREPLY -W "Aqua Background LoginWindow StandardIO System" -- "${cur}"; return ;;
-                -D) compgen -V COMPREPLY -W "system local network user" -- "${cur}"; return ;;
+__launchctl_complete_config() {
+    # config system|user umask|path value
+    case $CURRENT in
+        1) compadd system user ;;
+        2) compadd umask path ;;
+        3)
+            case $words[2] in
+                umask)
+                    local -a umasks
+                    umasks=( {0..7}{0..7}{0..7} )
+                    compadd -a umasks
+                    ;;
+                path) _files ;;
             esac
-            readarray -t files < <(__launchctl_paths)
-
-            if [ -z "${cur}" ]; then
-                compgen -V COMPREPLY_RAW -W "${files[*]/%Library*/Library} ${possibilities[*]}" -- "${cur}"
-                COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-            elif [ "${cur:0:1}" = '-' ]; then
-                compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            elif [ "${cur:0:1}" = '~' ]; then
-                    eval "exp_cur=$cur"
-                    # shellcheck disable=SC2154
-                    compgen -V COMPREPLY_RAW -W "${files[*]}" -- "${exp_cur}"
-                    COMPREPLY=("${COMPREPLY_RAW[@]/#$HOME/\~}")
-            else
-                compgen -V COMPREPLY -W "${files[*]}" -- "${cur}"
-            fi
-            return
-            ;;
-        unsetenv)
-            # unsetenv key
-            local possibilities=("$(__launchctl_list_envvars | paste -sd ' ' -)")
-            compgen -V COMPREPLY -W "${possibilities[*]}" -- "${cur}"
-            return
-            ;;
-        variant)
-            # variant
-            return
-            ;;
-        version)
-            # version
-            return
-            ;;
-        bootshell)
-            # bootshell [continue]
-            compgen -V COMPREPLY -W "continue" -- "${cur}"
-            return
-            ;;
-        print-token)
-            # print-token <xpc token>
-            return
-            ;;
-        dump-xsc)
-            # dump-xsc <name>
-            return
-            ;;
-        dumpjpcategory)
-            # dumpjpcategory
-            return
-            ;;
-        dumpstate)
-            # dumpstate
-            return
             ;;
     esac
 }
 
-complete -F _launchctl2 launchctl
+__launchctl_complete_debug() {
+    # debug service-target [--program <path>] [--guard-malloc] [...] [--] [argv0 ...]
+    local -a all_flags
+    all_flags=(
+        --program --guard-malloc --malloc-stack-logging --malloc-nano-allocator
+        --start-suspended --debug-libraries --introspection-libraries
+        --NSZombie --32 --stdin --stdout --stderr --environment --
+    )
+
+    local double_dash_idx=$words[(I)--]
+    if (( double_dash_idx && CURRENT > double_dash_idx )); then
+        # FIXME: full command completion like sudo
+        _command_names -e
+        return
+    fi
+
+    if (( CURRENT == 1 )); then
+        __launchctl_complete_service_target all
+        return
+    fi
+
+    case $words[CURRENT-1] in
+        --program)
+            _command_names -e
+            return
+            ;;
+        --stdin|--stdout|--stderr)
+            _files
+            return
+            ;;
+        --environment)
+            # KEY=value pairs; hard to complete
+            return
+            ;;
+    esac
+
+    # Offer remaining unused flags
+    local -a remaining
+    local f
+    for f in "${all_flags[@]}"; do
+        if (( ! $words[(I)$f] )); then
+            remaining+=( "$f" )
+        fi
+    done
+    compadd -a remaining
+}
+
+__launchctl_complete_error() {
+    # error [posix|mach|bootstrap] code
+    case $CURRENT in
+        1) compadd posix mach bootstrap ;;
+        *)
+            case $words[2] in
+                bootstrap) compadd {0..56} {1000..1003} {1100..1105} {1601..1607} ;;
+                mach)      compadd {1..56} ;;
+                posix)     compadd {0..164} ;;
+            esac
+            ;;
+    esac
+}
+
+__launchctl_complete_kickstart() {
+    # kickstart [-k] [-p] <service-target>
+    local state
+    _arguments -s -S \
+        '(-k)-k[kill service if already running]' \
+        '(-p)-p[print PID of service after start]' \
+        ':service-target:->st'
+    case $state in
+        st) __launchctl_complete_service_target started ;;
+    esac
+}
+
+__launchctl_complete_kill() {
+    # kill <signal-number|signal-name> <service-target>
+    if (( CURRENT == 1 )); then
+        _signals
+        compadd {1..31}
+    else
+        __launchctl_complete_service_target started
+    fi
+}
+
+__launchctl_complete_limit() {
+    # limit [<limit-name> [<both-limits> | <soft-limit> <hard-limit>]]
+    case $CURRENT in
+        1) compadd cpu filesize data stack core rss memlock maxproc maxfiles ;;
+        *) compadd unlimited ;;
+    esac
+}
+
+__launchctl_complete_load_unload() {
+    # load|unload [-wF] [-S sessiontype] [-D searchpath] paths...
+    local state
+    _arguments -s -S \
+        '(-w)-w[mark service to be loaded on next boot]' \
+        '(-F)-F[force loading/unloading]' \
+        '-S+[specify session type]:session type:(Aqua Background LoginWindow StandardIO System)' \
+        '-D+[specify search path]:search path:(system local network user)' \
+        '*:plist file:->plist'
+    case $state in
+        plist) __launchctl_complete_plist_paths ;;
+    esac
+}
+
+__launchctl_complete_plist() {
+    # plist [segment,section] Mach-O
+    if (( CURRENT == 1 )); then
+        local -a segsecs
+        segsecs=( ${(f)"$(__launchctl_list_segments_and_sections)"} )
+        compadd -a segsecs
+    else
+        _files
+    fi
+}
+
+__launchctl_complete_submit() {
+    # submit -l label [-p executable] [-o stdout-path] [-e stderr-path] -- command [args]
+    local double_dash_idx=$words[(I)--]
+    if (( double_dash_idx && CURRENT > double_dash_idx )); then
+        # FIXME: full command completion like sudo
+        _command_names -e
+        return
+    fi
+
+    local -a args
+    args=(
+        '-l+[specify job label]:label'
+        '-o+[specify stdout path]:file:_files'
+        '-e+[specify stderr path]:file:_files'
+    )
+    # Only offer -p and -- once -l is present
+    if (( $words[(I)-l] )); then
+        args+=( '-p+[specify executable]:executable:_command_names -e' )
+        args+=( '(- :)--[end of flags]' )
+    fi
+    _arguments -s -S "${args[@]}"
+}
+
+# --- Main completion function ---
+
+_launchctl() {
+    local curcontext="$curcontext" state line
+    local -a subcommands
+    subcommands=(
+        'asuser:execute a command in the given user'\''s context'
+        'attach:attach the system debugger to a service'
+        'blame:print the reason a service is running'
+        'bootout:cancel service loading or unload a service'
+        'bootstrap:bootstrap a service into a domain'
+        'bootshell:bring the system up in bootstrap context'
+        'bsexec:execute a command in the given bootstrap context'
+        'config:configure a parameter of launchd'
+        'debug:reconfigure a service for debugging'
+        'disable:disable a service'
+        'dump-xsc:dump an XPC service'\''s state'
+        'dumpjpcategory:dump the JPC category for all services'
+        'dumpstate:dump launchd state to standard output'
+        'enable:enable a service'
+        'error:print a description of a given error code'
+        'examine:run a tool against launchd'\''s internals'
+        'getenv:print a launchd environmental variable'
+        'help:get help on how to use launchctl'
+        'hostinfo:print a summary of host information'
+        'kickstart:force a service to start immediately'
+        'kill:send a signal to a service'
+        'limit:view and adjust resource limits'
+        'list:list services and their properties'
+        'load:load a service (deprecated, prefer bootstrap)'
+        'managername:print the name of the current launchd session'
+        'managerpid:print the PID of the current launchd session'\''s manager'
+        'manageruid:print the UID of the current launchd session'\''s manager'
+        'plist:print a property list embedded in a Mach-O binary'
+        'print:print a description of a domain or service'
+        'print-cache:print the launchd job cache'
+        'print-disabled:print the list of disabled services'
+        'print-token:print a security token'
+        'procinfo:print port information about a process'
+        'reboot:reboot the machine'
+        'remove:remove a job from launchd'
+        'resolveport:resolve a port name from a process'
+        'setenv:set a launchd environmental variable'
+        'start:start a service'
+        'stop:stop a service'
+        'submit:submit a basic job to launchd'
+        'unload:unload a service (deprecated, prefer bootout)'
+        'unsetenv:unset a launchd environmental variable'
+        'variant:print the launchd variant'
+        'version:print the launchd version'
+    )
+
+    _arguments -C \
+        '1:subcommand:->subcommand' \
+        '*::args:->args'
+
+    case $state in
+        subcommand)
+            _describe 'launchctl subcommand' subcommands
+            ;;
+        args)
+            curcontext="${curcontext%:*}-${words[1]}:"
+            case $words[1] in
+                asuser)         __launchctl_complete_asuser ;;
+                attach)         __launchctl_complete_attach ;;
+                blame)          __launchctl_complete_service_target started ;;
+                bootout)        __launchctl_complete_bootout ;;
+                bootstrap)      __launchctl_complete_bootstrap ;;
+                bootshell)      compadd continue ;;
+                bsexec)         __launchctl_complete_bsexec ;;
+                config)         __launchctl_complete_config ;;
+                debug)          __launchctl_complete_debug ;;
+                disable)        __launchctl_complete_service_target started ;;
+                dump-xsc)       ;;
+                dumpjpcategory) ;;
+                dumpstate)      ;;
+                enable)         __launchctl_complete_service_target stopped ;;
+                error)          __launchctl_complete_error ;;
+                examine)        _alternative \
+                                    'commands:command:_command_names -e' \
+                                    'special:special:((\\@PID))' ;;
+                getenv)         local -a ev; ev=( ${(f)"$(__launchctl_list_envvars)"} ); compadd -a ev ;;
+                help)           _describe 'launchctl subcommand' subcommands ;;
+                hostinfo)       ;;
+                kickstart)      __launchctl_complete_kickstart ;;
+                kill)           __launchctl_complete_kill ;;
+                limit)          __launchctl_complete_limit ;;
+                list)           local -a lb; lb=( ${(f)"$(__launchctl_list_labels)"} ); compadd -a lb ;;
+                load)           __launchctl_complete_load_unload ;;
+                managername)    ;;
+                managerpid)     ;;
+                manageruid)     ;;
+                plist)          __launchctl_complete_plist ;;
+                print)          __launchctl_complete_service_target all ;;
+                print-cache)    ;;
+                print-disabled) __launchctl_complete_service_target domain ;;
+                print-token)    ;;
+                procinfo)       local -a pids; pids=( ${(f)"$(__launchctl_list_pids)"} ); compadd -a pids ;;
+                reboot)         compadd system halt userspace logout apps ;;
+                remove)         local -a lb; lb=( ${(f)"$(__launchctl_list_labels)"} ); compadd -a lb ;;
+                resolveport)    local -a pids; pids=( ${(f)"$(__launchctl_list_pids)"} ); compadd -a pids ;;
+                setenv)         ;;
+                start)          local -a lb; lb=( ${(f)"$(__launchctl_list_labels)"} ); compadd -a lb ;;
+                stop)           local -a lb; lb=( ${(f)"$(__launchctl_list_labels)"} ); compadd -a lb ;;
+                submit)         __launchctl_complete_submit ;;
+                unload)         __launchctl_complete_load_unload ;;
+                unsetenv)       local -a ev; ev=( ${(f)"$(__launchctl_list_envvars)"} ); compadd -a ev ;;
+                variant)        ;;
+                version)        ;;
+            esac
+            ;;
+    esac
+}
+
+_launchctl "$@"
