@@ -138,13 +138,17 @@ __launchctl_complete_plist_paths() {
 
 __launchctl_complete_asuser() {
     # asuser UID command [args]
-    if (( CURRENT == 1 )); then
+    if (( CURRENT == 2 )); then
         local -a uids
         uids=( ${(f)"$(__launchctl_list_uids)"} )
         compadd -a uids
     else
-        shift words
-        (( CURRENT-- ))
+        # CURRENT > 2: the UID has been given and we are now completing the command
+        # name or one of its arguments. Strip the subcommand + UID so that _normal
+        # sees a plain "command [args]" context and recurses into that command's own
+        # completion (the same technique used by the sudo completion).
+        shift 2 words
+        (( CURRENT -= 2 ))
         _normal
     fi
 }
@@ -164,7 +168,7 @@ __launchctl_complete_attach() {
 
 __launchctl_complete_bootout() {
     # bootout domain-target [service-path ...] | service-target
-    if (( CURRENT == 1 )); then
+    if (( CURRENT == 2 )); then
         __launchctl_complete_service_target started
     else
         __launchctl_complete_plist_paths
@@ -173,7 +177,7 @@ __launchctl_complete_bootout() {
 
 __launchctl_complete_bootstrap() {
     # bootstrap domain-target [service-path ...] | service-target
-    if (( CURRENT == 1 )); then
+    if (( CURRENT == 2 )); then
         __launchctl_complete_service_target stopped
     else
         __launchctl_complete_plist_paths
@@ -182,13 +186,17 @@ __launchctl_complete_bootstrap() {
 
 __launchctl_complete_bsexec() {
     # bsexec PID command [args]
-    if (( CURRENT == 1 )); then
+    if (( CURRENT == 2 )); then
         local -a pids
         pids=( ${(f)"$(__launchctl_list_pids)"} )
         compadd -a pids
     else
-        shift words
-        (( CURRENT-- ))
+        # CURRENT > 2: the PID has been given and we are now completing the command
+        # name or one of its arguments. Strip the subcommand + PID so that _normal
+        # sees a plain "command [args]" context and recurses into that command's own
+        # completion (the same technique used by the sudo completion).
+        shift 2 words
+        (( CURRENT -= 2 ))
         _normal
     fi
 }
@@ -196,10 +204,10 @@ __launchctl_complete_bsexec() {
 __launchctl_complete_config() {
     # config system|user umask|path value
     case $CURRENT in
-        1) compadd system user ;;
-        2) compadd umask path ;;
-        3)
-            case $words[2] in
+        2) compadd system user ;;
+        3) compadd umask path ;;
+        4)
+            case $words[3] in
                 umask)
                     local -a umasks
                     umasks=( {0..7}{0..7}{0..7} )
@@ -222,13 +230,16 @@ __launchctl_complete_debug() {
 
     local double_dash_idx=$words[(I)--]
     if (( double_dash_idx && CURRENT > double_dash_idx )); then
+        # Past the -- separator: complete the argv0 command and its arguments by
+        # stripping everything up to and including -- and delegating to _normal,
+        # which recurses into that command's own completion (sudo technique).
         shift $double_dash_idx words
         (( CURRENT -= double_dash_idx ))
         _normal
         return
     fi
 
-    if (( CURRENT == 1 )); then
+    if (( CURRENT == 2 )); then
         __launchctl_complete_service_target all
         return
     fi
@@ -262,7 +273,7 @@ __launchctl_complete_debug() {
 __launchctl_complete_error() {
     # error [posix|mach|bootstrap] code
     case $CURRENT in
-        1) compadd posix mach bootstrap ;;
+        2) compadd posix mach bootstrap ;;
         *)
             case $words[2] in
                 bootstrap) compadd {0..56} {1000..1003} {1100..1105} {1601..1607} ;;
@@ -287,7 +298,7 @@ __launchctl_complete_kickstart() {
 
 __launchctl_complete_kill() {
     # kill <signal-number|signal-name> <service-target>
-    if (( CURRENT == 1 )); then
+    if (( CURRENT == 2 )); then
         _signals
         compadd {1..31}
     else
@@ -298,7 +309,7 @@ __launchctl_complete_kill() {
 __launchctl_complete_limit() {
     # limit [<limit-name> [<both-limits> | <soft-limit> <hard-limit>]]
     case $CURRENT in
-        1) compadd cpu filesize data stack core rss memlock maxproc maxfiles ;;
+        2) compadd cpu filesize data stack core rss memlock maxproc maxfiles ;;
         *) compadd unlimited ;;
     esac
 }
@@ -319,7 +330,7 @@ __launchctl_complete_load_unload() {
 
 __launchctl_complete_plist() {
     # plist [segment,section] Mach-O
-    if (( CURRENT == 1 )); then
+    if (( CURRENT == 2 )); then
         local -a segsecs
         segsecs=( ${(f)"$(__launchctl_list_segments_and_sections)"} )
         compadd -a segsecs
@@ -332,6 +343,9 @@ __launchctl_complete_submit() {
     # submit -l label [-p executable] [-o stdout-path] [-e stderr-path] -- command [args]
     local double_dash_idx=$words[(I)--]
     if (( double_dash_idx && CURRENT > double_dash_idx )); then
+        # Past the -- separator: complete the command and its arguments by
+        # stripping everything up to and including -- and delegating to _normal,
+        # which recurses into that command's own completion (sudo technique).
         shift $double_dash_idx words
         (( CURRENT -= double_dash_idx ))
         _normal
