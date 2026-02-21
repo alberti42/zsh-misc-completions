@@ -3,11 +3,22 @@
 # Credits: Camden Narzt (2026), MIT license (https://github.com/CamJN/launchctl-completion)
 
 # TODO:
-#  fix commands that run other commands to handle completion like sudo does (grep FIXME)
-#      https://github.com/scop/bash-completion/blob/main/completions/sudo#L17
-#  find way to list: asids, xpc-tokens, xsc-names, port-names
-#  package section/segment dumper and install if missing
-#  list deps like fd, segment_dumper
+  #  Some subcommands (asuser, bsexec, debug, submit) accept another shell command as an
+  #  argument. Currently, only the command name is completed — not its arguments. Improve
+  #  this to recursively complete the sub-command's arguments, similar to how sudo
+  #  completion works. See the FIXMEs below and the reference implementation:
+  #      https://github.com/scop/bash-completion/blob/main/completions/sudo#L17
+  #
+  #  Several launchctl arguments have no known programmatic way to enumerate:
+  #  audit session IDs (asids), XPC tokens, XPC service names, and Mach port names.
+  #  Find a way to list these so they can be completed.
+  #
+  #  The 'plist' subcommand's completion relies on 'segment_dumper', which may not be
+  #  installed on the user's system. Consider bundling the tool or prompting the user
+  #  to install it when it's missing.
+  #
+  #  Document (or check at runtime) the external tools this script depends on:
+  #  'fd' (fast find) and 'segment_dumper' (Mach-O binary inspector).
 
 __launchctl_paths() {
     local -a files
