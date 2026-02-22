@@ -1,30 +1,19 @@
 #compdef launchctl
 
-# Credits: Camden Narzt (2026), MIT license (https://github.com/CamJN/launchctl-completion)
+# Credits:
+# - Camden Narzt (2016-2025), MIT license (https://github.com/CamJN/launchctl-completion)
+# - Andrea Alberti (2026), MIT license (https://github.com/alberti42/zsh-misc-completions) 
 
 # TODO:
   #  Several launchctl arguments have no known programmatic way to enumerate:
   #  audit session IDs (asids), XPC tokens, XPC service names, and Mach port names.
   #  Find a way to list these so they can be completed.
-  #
-  #  The 'plist' subcommand's completion relies on 'segment_dumper', which may not be
-  #  installed on the user's system. Consider bundling the tool or prompting the user
-  #  to install it when it's missing.
-  #
-  #  Document (or check at runtime) the external tools this script depends on:
-  #  'fd' (fast find) and 'segment_dumper' (Mach-O binary inspector).
 
 __launchctl_paths() {
     local -a files
     # -N: nullglob (no error if no match), .: regular files only
     files=( /Library/Launch*/*(-N.) ~/Library/Launch*/*(-N.) )
     print -l "${files[@]/#${HOME}/~}"
-}
-
-__launchctl_list_segments_and_sections() {
-    local -a pathdirs
-    pathdirs=( ${(s/:/)PATH} )
-    fd . "${pathdirs[@]}" --type x 2>/dev/null | xargs segment_dumper 2>/dev/null | sort -u
 }
 
 __launchctl_list_pids() {
@@ -331,11 +320,32 @@ __launchctl_complete_load_unload() {
 }
 
 __launchctl_complete_plist() {
-    # plist [segment,section] Mach-O
+    # Completes arguments for: launchctl plist [segment,section] <Mach-O-binary>
+    #
+    # Background:
+    #   Some macOS daemons/agents embed their launchd configuration directly
+    #   inside the Mach-O binary instead of shipping a separate .plist file.
+    #   The data lives in a named segment+section of the binary.
+    #
+    #   A Mach-O binary is organized as:
+    #     segment (__TEXT) -> section (__launchd_plist)
+    #
+    #   The [segment,section] argument is a single token (comma-separated)
+    #   telling launchctl *where* inside the binary to look. Example:
+    #     launchctl plist __TEXT,__launchd_plist /usr/libexec/some-daemon
+    #
+    #   By convention, launchd plists are ALWAYS embedded in __TEXT,__launchd_plist.
+    #   No other segment/section is used for this purpose in practice, so we
+    #   hardcode this single value rather than scanning binaries at completion time.
+    #
+    #   The [segment,section] argument is optional: if omitted, launchctl defaults
+    #   to __TEXT,__launchd_plist automatically. So at position 2 the user may
+    #   type either the segment,section token OR go straight to the binary path.
+    #   launchctl tells them apart unambiguously: a segment,section token always
+    #   contains a comma, while a file path never does.
     if (( CURRENT == 2 )); then
-        local -a segsecs
-        segsecs=( ${(f)"$(__launchctl_list_segments_and_sections)"} )
-        compadd -a segsecs
+        compadd -- '__TEXT,__launchd_plist'
+        _files
     else
         _files
     fi

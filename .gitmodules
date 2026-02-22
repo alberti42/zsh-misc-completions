@@ -1,0 +1,3 @@
+[submodule "segment_dumper"]
+	path = segment_dumper
+	url = https://github.com/AlexDenisov/segment_dumper
