@@ -1,0 +1,7 @@
+#compdef remacs
+
+# Autoload _rmate without executing it (+X) to ensure it is available
+autoload +X -Uz _rmate
+
+# Forward all arguments to _rmate
+_rmate "$@"
